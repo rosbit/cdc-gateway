@@ -26,6 +26,8 @@ func GetTransInfo(c *helper.Context) {
 		getTransInfo = api.GetCreditorTransInfo
 	case "D":
 		getTransInfo = api.GetDebtorTransInfo
+	case "A", "":
+		getTransInfo = api.GetTransInfo
 	default:
 		c.Error(http.StatusBadRequest, "unknown cdMark")
 		return

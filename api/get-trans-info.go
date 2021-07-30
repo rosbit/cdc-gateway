@@ -12,6 +12,7 @@ import (
 const (
 	debtor_flag   = "D"
 	creditor_flag = "C"
+	all_flag      = "A"
 
 	trans_info_api = "DCTRSINF"
 )
@@ -62,19 +63,35 @@ type TransInfo struct {
 	LastSeq uint64 `json:"-"` // 一个计数，借用结构体存放
 }
 
+func makeCheckCD(filterCD string) func(string)(string,bool) {
+	return func(cdMark string) (string,bool) {
+		switch filterCD {
+		case all_flag, "":
+			return filterCD, true
+		default:
+			return filterCD, filterCD == cdMark
+		}
+	}
+}
+
 type FnGetTransInfo func(app string, date string, seq uint64) (count uint32, it <-chan *TransInfo, err error)
 
 // 借方（收入)
 func GetDebtorTransInfo(app string, date string, seq uint64) (count uint32, it <-chan *TransInfo, err error) {
-	return getTransInfo(app, date, debtor_flag, seq)
+	return getTransInfo(app, date, makeCheckCD(debtor_flag), seq)
 }
 
 // 贷方（支出)
 func GetCreditorTransInfo(app string, date string, seq uint64) (count uint32, it <-chan *TransInfo, err error) {
-	return getTransInfo(app, date, creditor_flag, seq)
+	return getTransInfo(app, date, makeCheckCD(creditor_flag), seq)
 }
 
-func getTransInfo(app string, date string, cdMark string, seq uint64) (count uint32, it <-chan *TransInfo, err error) {
+// 借方+贷方
+func GetTransInfo(app string, date string, seq uint64) (count uint32, it <-chan *TransInfo, err error) {
+	return getTransInfo(app, date, makeCheckCD(all_flag), seq)
+}
+
+func getTransInfo(app string, date string, checkCD func(string)(string,bool), seq uint64) (count uint32, it <-chan *TransInfo, err error) {
 	cdcConf := gwconf.GetCDCConf(app)
 	if cdcConf == nil {
 		err = fmt.Errorf("app name %s not found", app)
@@ -92,7 +109,7 @@ func getTransInfo(app string, date string, cdMark string, seq uint64) (count uin
 	}
 	setSeq(trans, header.TransactionSeq)
 
-	switch cdMark {
+	switch cdMark, _ := checkCD(""); cdMark {
 	case debtor_flag:
 		if header.DebtorCount == 0 {
 			return
@@ -103,10 +120,15 @@ func getTransInfo(app string, date string, cdMark string, seq uint64) (count uin
 			return
 		}
 		count = header.CreditorCount
+	default:
+		count = header.DebtorCount+header.CreditorCount
+		if count == 0 {
+			return
+		}
 	}
 
 	transPage := make(chan []TransInfo)
-	it = makeChanTrans(transPage, cdMark)
+	it = makeChanTrans(transPage, checkCD)
 
 	// fetch other pages
 	go func() {
@@ -175,13 +197,13 @@ func get1PageTransInfo(cdcConf *gwconf.CDCConfT, date string, transSeq uint64) (
 	return
 }
 
-func makeChanTrans(transPage <-chan []TransInfo, cdMark string) (<-chan *TransInfo) {
+func makeChanTrans(transPage <-chan []TransInfo, checkCD func(string)(string,bool)) (<-chan *TransInfo) {
 	it := make(chan *TransInfo)
 	go func() {
 		for trans := range transPage {
 			for i, _ := range trans {
 				t := &trans[i]
-				if t.CDMark == cdMark {
+				if _, ok := checkCD(t.CDMark); ok {
 					it <- t
 				}
 			}
