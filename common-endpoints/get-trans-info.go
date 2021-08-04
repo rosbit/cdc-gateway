@@ -2,12 +2,15 @@ package ce
 
 import (
 	"github.com/rosbit/http-helper"
+	"cdc-gateway/cache"
 	"cdc-gateway/conf"
 	"cdc-gateway/api"
 	"net/http"
 	"strings"
 	"time"
 	"fmt"
+	"io"
+	"bytes"
 	"encoding/json"
 )
 
@@ -52,6 +55,14 @@ func GetTransInfo(c *helper.Context) {
 		return
 	}
 	date := d.Format("20060102")
+
+	cachedContent := cache.Get(app, date, cdMark, params.Seq)
+	fmt.Printf("get content from cache (%s, %s, %s, %d): %p\n", app, date, cdMark, params.Seq, cachedContent)
+	if cachedContent != nil {
+		c.Blob(http.StatusOK, "application/json", cachedContent)
+		return
+	}
+
 	count, it, err := getTransInfo(app, date, params.Seq)
 	if err != nil {
 		c.Error(http.StatusInternalServerError, err.Error())
@@ -67,9 +78,17 @@ func GetTransInfo(c *helper.Context) {
 		return
 	}
 
-	w := c.Response()
-	w.Header().Set("Content-Type", "application/json")
+	w := &bytes.Buffer{}
+	makeContent(w, count, it)
+	cachedContent = w.Bytes()
+	go func() {
+		cache.Set(app, date, cdMark, params.Seq, cachedContent, gwconf.ServiceConf.CacheLiveTime)
+	}()
 
+	c.Blob(http.StatusOK, "application/json", cachedContent)
+}
+
+func makeContent(w io.Writer, count uint32, it <-chan *api.TransInfo) {
 	j := json.NewEncoder(w)
 	j.SetEscapeHTML(false)
 

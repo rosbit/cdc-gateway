@@ -7,6 +7,7 @@
 // ---
 // listen-host: ""
 // listen-port: 7080
+// cache-live-time: 300
 // apps:
 //   - name: app-name
 //     service-url: "http://183.62.66.60:9080/cdcserver/api/v2"
@@ -54,6 +55,7 @@ type AppParams struct {
 type ServiceConfT struct {
 	ListenHost     string `yaml:"listen-host"`
 	ListenPort     int    `yaml:"listen-port"`
+	CacheLiveTime  int64  `yaml:"cache-live-time"`
 	Apps []AppParams `yaml:"apps"`
 	CommonEndpoints struct {
 		HealthCheck string `yaml:"health-check"`
@@ -122,6 +124,9 @@ func checkMust(confFile string) error {
 
 	if ServiceConf.ListenPort <= 0 {
 		return fmt.Errorf("listen-port expected in conf")
+	}
+	if ServiceConf.CacheLiveTime <= 0 {
+		ServiceConf.CacheLiveTime = 300
 	}
 
 	apps := ServiceConf.Apps

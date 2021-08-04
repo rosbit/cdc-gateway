@@ -7,12 +7,15 @@ package main
 import (
 	"github.com/rosbit/http-helper"
 	"cdc-gateway/common-endpoints"
+	"cdc-gateway/cache"
 	"cdc-gateway/conf"
 	"net/http"
 	"fmt"
 )
 
 func StartService() error {
+	cache.StartCleaningThread()
+
 	api := helper.NewHelper(helper.WithLogger("cloud-direct-connect"))
 
 	serviceConf := gwconf.ServiceConf
