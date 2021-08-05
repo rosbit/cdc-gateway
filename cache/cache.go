@@ -1,9 +1,9 @@
 package cache
 
 import (
-	"crypto/md5"
 	"sync"
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -20,7 +20,7 @@ var (
 
 func Get(app, date, cdMark string, seq uint64) ([]byte) {
 	key := makeKey(app, date, cdMark, seq)
-	fmt.Printf("key to Get: %s\n", key)
+	log.Printf("key to Get: %s\n", key)
 
 	mutex.RLock()
 	defer mutex.RUnlock()
@@ -30,8 +30,8 @@ func Get(app, date, cdMark string, seq uint64) ([]byte) {
 		return nil
 	}
 	now := time.Now().Unix()
-	fmt.Printf("now: %d, c.expire: %d\n", now, c.expire)
-	if now >= c.expire {
+	log.Printf(" + now: %d, c.expire: %d\n", now, c.expire)
+	if now > c.expire {
 		return nil
 	}
 	return c.content
@@ -39,12 +39,12 @@ func Get(app, date, cdMark string, seq uint64) ([]byte) {
 
 func Set(app, date, cdMark string, seq uint64, content []byte, liveTimeInSecs int64) {
 	key := makeKey(app, date, cdMark, seq)
-	fmt.Printf("key to Set: %s\n", key)
 
 	mutex.Lock()
 	defer mutex.Unlock()
 
 	expire := time.Now().Unix() + liveTimeInSecs
+	log.Printf("key to Set: %s, with expire time %d\n", key, expire)
 	cache[key] = &cacheVal{
 		content: content,
 		expire: expire,
@@ -63,16 +63,14 @@ func Set(app, date, cdMark string, seq uint64, content []byte, liveTimeInSecs in
 }
 
 func makeKey(app, date, cdMark string, seq uint64) string {
-	h := md5.New()
-	fmt.Fprintf(h, "%s_%s_%s_%d", app, date, cdMark, seq)
-	return fmt.Sprintf("%x", h.Sum(nil))
+	return fmt.Sprintf("%s_%s_%s_%d", app, date, cdMark, seq)
 }
 
 func StartCleaningThread() {
 	go func() {
 		t := time.NewTicker(1*time.Minute)
 		for now := range t.C {
-			fmt.Printf("cleaning thread wakeup\n")
+			log.Printf("cleaning thread wakeup\n")
 			clearExpiredContents(now.Unix())
 		}
 	}()
@@ -90,12 +88,21 @@ func clearExpiredContents(now int64) {
 			expireTime = append(expireTime, expire)
 		}
 
+		if len(expireTime) == 0 {
+			log.Printf(" + no cache removed\n")
+			return
+		}
 		for _, expire := range expireTime {
 			ks := expire2key[expire]
 			delete(expire2key, expire)
+			log.Printf(" + cache for expiredTime %d removed\n", expire)
 
 			for _, key := range ks {
-				delete(cache, key)
+				c, ok := cache[key]
+				if ok && c.expire <= expire {
+					delete(cache, key)
+					log.Printf("   - key %s removed\n", key)
+				}
 			}
 		}
 }
